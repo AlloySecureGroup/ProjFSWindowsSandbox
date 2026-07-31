@@ -21,26 +21,18 @@ if (-not [Environment]::Is64BitProcess) {
     throw "Run this in 64-bit PowerShell. Current process is 32-bit. Launch %WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe (not SysWOW64)."
 }
 
-$feature = Get-WindowsOptionalFeature -Online -FeatureName 'Client-ProjFS' -ErrorAction SilentlyContinue
-if ($null -eq $feature -or $feature.State -ne 'Enabled') {
-    Write-Warning "Client-ProjFS is not enabled (State: $($feature.State)). Attempting to enable it now."
-    $result = Enable-WindowsOptionalFeature -Online -FeatureName 'Client-ProjFS' -All -NoRestart -ErrorAction Stop
-    if ($result.RestartNeeded) {
-        Write-Warning "ProjFS was enabled but reports RestartNeeded. In a normal machine, reboot. In Windows Sandbox you cannot persist a reboot, so the prjflt filter may not load and ProjFS will be unavailable this session."
-    }
-}
-
-# The prjflt minifilter must be running for any Prj* call to work.
-$svc = Get-Service -Name 'prjflt' -ErrorAction SilentlyContinue
+# The PrjFlt minifilter (side-loaded by Sandbox-Bootstrap.ps1) must be running
+# for any Prj* call to work.
+$svc = Get-Service -Name 'PrjFlt' -ErrorAction SilentlyContinue
 if ($null -eq $svc) {
-    throw "The prjflt service does not exist. ProjFS is not installed/available in this environment."
+    throw "The PrjFlt service does not exist. Run Sandbox-Bootstrap.ps1 first to side-load ProjFS."
 }
 if ($svc.Status -ne 'Running') {
-    Write-Warning "prjflt service is '$($svc.Status)'. Trying to start it."
+    Write-Warning "PrjFlt service is '$($svc.Status)'. Trying to start it."
     try {
-        Start-Service -Name 'prjflt' -ErrorAction Stop
+        Start-Service -Name 'PrjFlt' -ErrorAction Stop
     } catch {
-        throw "Could not start prjflt: $($_.Exception.Message). Without the prjflt filter driver, ProjFS calls will fail. This is the common Windows Sandbox limitation (the driver typically needs a reboot to load)."
+        throw "Could not start PrjFlt: $($_.Exception.Message). Confirm the bootstrap loaded the minifilter (check fltmc filters)."
     }
 }
 

@@ -21,18 +21,19 @@ if (-not [Environment]::Is64BitProcess) {
     throw "Run this in 64-bit PowerShell. Current process is 32-bit. Launch %WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe (not SysWOW64)."
 }
 
-# The PrjFlt minifilter (side-loaded by Sandbox-Bootstrap.ps1) must be running
-# for any Prj* call to work.
-$svc = Get-Service -Name 'PrjFlt' -ErrorAction SilentlyContinue
-if ($null -eq $svc) {
-    throw "The PrjFlt service does not exist. Run Sandbox-Bootstrap.ps1 first to side-load ProjFS."
+# PrjFlt is a file system minifilter, not a Win32 service, so Get-Service does
+# not list it (PowerShell 5.1 Get-Service enumerates Win32 services only).
+# Verify it with the filter manager instead, matching Sandbox-Bootstrap.ps1.
+function Test-PrjFltLoaded {
+    $filters = (& fltmc.exe filters 2>&1 | Out-String)
+    return ($filters -match '(?im)PrjFlt|ProjFS')
 }
-if ($svc.Status -ne 'Running') {
-    Write-Warning "PrjFlt service is '$($svc.Status)'. Trying to start it."
-    try {
-        Start-Service -Name 'PrjFlt' -ErrorAction Stop
-    } catch {
-        throw "Could not start PrjFlt: $($_.Exception.Message). Confirm the bootstrap loaded the minifilter (check fltmc filters)."
+
+if (-not (Test-PrjFltLoaded)) {
+    Write-Warning "PrjFlt minifilter is not attached. Trying to load it."
+    & fltmc.exe load PrjFlt 2>&1 | Out-Host
+    if (-not (Test-PrjFltLoaded)) {
+        throw "PrjFlt minifilter is not loaded and could not be loaded. Run Sandbox-Bootstrap.ps1 first to side-load and load the filter."
     }
 }
 
@@ -234,15 +235,18 @@ public static class BasicProjFSProvider
         return info;
     }
 
-    private static uint PlaceholderInfoHeaderSize()
+    private static uint PlaceholderInfoSize()
     {
-        return checked((uint)Marshal.OffsetOf(typeof(PRJ_PLACEHOLDER_INFO), "VariableData").ToInt64());
+        // ProjFS requires at least sizeof(PRJ_PLACEHOLDER_INFO), which includes
+        // the trailing VariableData element plus struct padding. Passing the
+        // smaller OffsetOf(VariableData) yields ERROR_INSUFFICIENT_BUFFER (0x8007007A).
+        return checked((uint)Marshal.SizeOf(typeof(PRJ_PLACEHOLDER_INFO)));
     }
 
     private static int WriteHelloPlaceholder(IntPtr namespaceContext)
     {
         PRJ_PLACEHOLDER_INFO info = CreatePlaceholderInfo();
-        return PrjWritePlaceholderInfo(namespaceContext, "hello.txt", ref info, PlaceholderInfoHeaderSize());
+        return PrjWritePlaceholderInfo(namespaceContext, "hello.txt", ref info, PlaceholderInfoSize());
     }
 
     private static int StartEnum(IntPtr callbackData, IntPtr enumerationId) { return S_OK; }
@@ -335,7 +339,7 @@ try {
     [BasicProjFSProvider]::Run($Root, $LogPath)
 }
 catch [System.DllNotFoundException] {
-    Write-Error "ProjectedFSLib.dll could not be loaded. ProjFS is not active in this session (feature disabled or prjflt not loaded). Original: $($_.Exception.Message)"
+    Write-Error "ProjectedFSLib.dll could not be loaded. ProjFS is not active in this session (PrjFlt not loaded). Run Sandbox-Bootstrap.ps1 first. Original: $($_.Exception.Message)"
 }
 catch {
     # Surface the real HRESULT / inner exception instead of a generic failure.

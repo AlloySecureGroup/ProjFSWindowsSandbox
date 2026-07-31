@@ -5,10 +5,60 @@ param(
     [string]$Root = 'C:\ProjFSRoot',
 
     [Parameter(Mandatory = $false)]
-    [string]$LogPath = 'C:\Sandbox\Write\provider.log'
+    [string]$LogPath = 'C:\Sandbox\Write\provider.log',
+
+    # Wipe and recreate the root before starting. Needed for repeat runs,
+    # because the root stays marked as a virtualization root and hello.txt
+    # becomes a real (hydrated) file after first access.
+    [switch]$ResetRoot
 )
 
 $ErrorActionPreference = 'Stop'
+
+# ---- Prerequisite checks (this is where ProjFS-in-Sandbox usually dies) ----
+
+if (-not [Environment]::Is64BitProcess) {
+    throw "Run this in 64-bit PowerShell. Current process is 32-bit. Launch %WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe (not SysWOW64)."
+}
+
+$feature = Get-WindowsOptionalFeature -Online -FeatureName 'Client-ProjFS' -ErrorAction SilentlyContinue
+if ($null -eq $feature -or $feature.State -ne 'Enabled') {
+    Write-Warning "Client-ProjFS is not enabled (State: $($feature.State)). Attempting to enable it now."
+    $result = Enable-WindowsOptionalFeature -Online -FeatureName 'Client-ProjFS' -All -NoRestart -ErrorAction Stop
+    if ($result.RestartNeeded) {
+        Write-Warning "ProjFS was enabled but reports RestartNeeded. In a normal machine, reboot. In Windows Sandbox you cannot persist a reboot, so the prjflt filter may not load and ProjFS will be unavailable this session."
+    }
+}
+
+# The prjflt minifilter must be running for any Prj* call to work.
+$svc = Get-Service -Name 'prjflt' -ErrorAction SilentlyContinue
+if ($null -eq $svc) {
+    throw "The prjflt service does not exist. ProjFS is not installed/available in this environment."
+}
+if ($svc.Status -ne 'Running') {
+    Write-Warning "prjflt service is '$($svc.Status)'. Trying to start it."
+    try {
+        Start-Service -Name 'prjflt' -ErrorAction Stop
+    } catch {
+        throw "Could not start prjflt: $($_.Exception.Message). Without the prjflt filter driver, ProjFS calls will fail. This is the common Windows Sandbox limitation (the driver typically needs a reboot to load)."
+    }
+}
+
+# Confirm the DLL is actually loadable before we JIT the native calls.
+$dll = Join-Path $env:WINDIR 'System32\ProjectedFSLib.dll'
+if (-not (Test-Path -LiteralPath $dll)) {
+    throw "ProjectedFSLib.dll not found at $dll. ProjFS is not present in this environment."
+}
+
+# ---- Reset the root so repeat runs behave the same as the first ----
+
+if ($ResetRoot -and (Test-Path -LiteralPath $Root)) {
+    Write-Host "Resetting root: $Root"
+    # A marked virtualization root can hold reparse points; remove recursively.
+    cmd /c "rmdir /s /q `"$Root`"" | Out-Null
+}
+
+# ---- Your provider (C# unchanged) ----
 
 $source = @'
 using System;
@@ -288,4 +338,18 @@ public static class BasicProjFSProvider
 '@
 
 Add-Type -TypeDefinition $source -Language CSharp
-[BasicProjFSProvider]::Run($Root, $LogPath)
+
+try {
+    [BasicProjFSProvider]::Run($Root, $LogPath)
+}
+catch [System.DllNotFoundException] {
+    Write-Error "ProjectedFSLib.dll could not be loaded. ProjFS is not active in this session (feature disabled or prjflt not loaded). Original: $($_.Exception.Message)"
+}
+catch {
+    # Surface the real HRESULT / inner exception instead of a generic failure.
+    Write-Error ("Provider failed: " + $_.Exception.GetType().FullName + ": " + $_.Exception.Message)
+    if ($_.Exception.InnerException) {
+        Write-Error ("Inner: " + $_.Exception.InnerException.Message)
+    }
+    throw
+}

@@ -1,0 +1,21 @@
+<Configuration>
+  <VGpu>Disable</VGpu>
+  <Networking>Disable</Networking>
+  <ClipboardRedirection>Enable</ClipboardRedirection>
+  <MemoryInMB>4096</MemoryInMB>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>C:\Sandbox\Read</HostFolder>
+      <SandboxFolder>C:\Sandbox\Read</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>C:\Sandbox\Write</HostFolder>
+      <SandboxFolder>C:\Sandbox\Write</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Sandbox\Read\Sandbox-Bootstrap.ps1</Command>
+  </LogonCommand>
+</Configuration>

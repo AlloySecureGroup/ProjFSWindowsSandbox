@@ -4,7 +4,8 @@ This package prepares a Windows Sandbox session that manually installs and loads
 
 ## One Shoe
 ```
-One-shot: extract the PhantomFS-Sandboxzip, right-click Install-And-Launch.ps1, choose Run with PowerShell, and approve the admin prompt. The sandbox launches and PhantomFS starts automatically.
+One-shot: extract the PhantomFS-Sandboxzip, right-click Install-And-Launch.ps1, choose Run with PowerShell,
+and approve the admin prompt. The sandbox launches and PhantomFS starts automatically. :-) 
 ```
 
 

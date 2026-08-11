@@ -2,10 +2,12 @@
 
 This package prepares a Windows Sandbox session that manually installs and loads the host-matched Windows Projected File System components, then runs a minimal provider that projects `C:\ProjFSRoot\hello.txt`.
 
-## One Shoe
+## One Shot
 ```
 One-shot: extract the PhantomFS-Sandboxzip, right-click Install-And-Launch.ps1, choose Run with PowerShell,
 and approve the admin prompt. The sandbox launches and PhantomFS starts automatically. :-) 
+
+For safety networking is disabled. You can enable and then map drives into the Sandbox 
 ```
 
 

@@ -10,6 +10,17 @@ and approve the admin prompt. The sandbox launches and PhantomFS starts automati
 For safety networking is disabled. You can enable and then map drives into the Sandbox 
 ```
 
+If you want to share One Shot from inside the SandBox.
+
+```
+$pw = (-join ((48..57)+(65..90)+(97..122) | Get-Random -Count 16 | ForEach-Object {[char]$_})) + '!Aa1'
+New-LocalUser -Name ITSupport -Password (ConvertTo-SecureString $pw -AsPlainText -Force) -Description 'PhantomFS canary account' -AccountNeverExpires | Out-Null
+New-SmbShare -Name PhantomFS -Path C:\PhantomFS -FullAccess Everyone | Out-Null
+Write-Host "ITSupport password: $pw"
+```
+Then map a drive into the Sandbox
+
+
 
 ## Run
 
